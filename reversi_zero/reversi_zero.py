@@ -276,6 +276,7 @@ class AlphaZero:
         self.num_epochs = num_epochs
         self.batch_size = batch_size
         self.board_generator = board_generator
+        self.num_searches = num_searches
 
         self.mcts = MCTS(game=game, C=C, model=model, dirichlet_alpha=dirichlet_alpha, dirichlet_epsiolon=dirichlet_epsiolon)
 
