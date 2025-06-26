@@ -263,6 +263,7 @@ class AlphaZero:
         num_epochs: int = 4,
         batch_size: int = 64,
         C: float = 1.2, 
+        num_searches: int = 50,
         dirichlet_epsiolon: float = 0.2,
         dirichlet_alpha: float = 0.2,
     ):
@@ -278,7 +279,7 @@ class AlphaZero:
 
         self.mcts = MCTS(game=game, C=C, model=model, dirichlet_alpha=dirichlet_alpha, dirichlet_epsiolon=dirichlet_epsiolon)
 
-    def selfPlay(self, num_searches: int = 1):
+    def selfPlay(self):
         memory = []
         current_player = 1
         board, num_players = self.board_generator() if callable(self.board_generator) else random.choice(self.board_generator)
@@ -291,7 +292,7 @@ class AlphaZero:
                 board=board,
                 num_players=num_players,
                 root_player=current_player,
-                num_searches=num_searches
+                num_searches=self.num_searches
             )
 
             memory.append((board, action_probs, current_player))
@@ -386,8 +387,9 @@ if __name__ == "__main__":
         optimizer=optimizer,
         game=reversi,
         temperature=1.25,
-        num_iterations=10,
-        num_selfPlay_iterations=1,
+        num_iterations=100,
+        num_selfPlay_iterations=10,
+        num_searches = 100,
         num_epochs=100,
         batch_size=64,
         C=2,
