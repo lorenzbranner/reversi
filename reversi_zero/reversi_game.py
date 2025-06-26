@@ -191,9 +191,9 @@ class Reversi:
         for idx, val in zip(sorted_indices, scaled):
             result[idx] = val
 
-        return result
+        return np.pad(result, (0, self.max_players - len(result)), mode='constant')
     
-    def get_encoded_board(self, board, num_players=4):
+    def get_encoded_board(self, board):
         """
         Converts the Reversi board into a tensor format suitable for a neural network.
         Returns an array with shape (channels, height, width).

@@ -53,7 +53,8 @@ class ResNet(nn.Module):
             nn.BatchNorm2d(3),
             nn.ReLU(),
             nn.Flatten(),
-            nn.Linear(3 * game.height * game.width, num_players),          
+            nn.Linear(3 * game.height * game.width, num_players),
+            nn.Tanh() 
         )
 
         self.to(device)
@@ -151,7 +152,7 @@ class Node:
             if prob > 0:
                 child_board = self.board.copy()
                 
-                move_tuple = [move // self.board.shape[1], move % self.board.shape[1]]
+                move_tuple = [move % self.board.shape[1], move // self.board.shape[1]]
                 child_board = self.game.get_next_board(child_board, move_tuple, self.current_player)  # TOD0
                 child_player = self.game.get_next_player(self.current_player, self.num_players)
                 
@@ -297,9 +298,7 @@ class AlphaZero:
 
             temp_action_probs = action_probs ** (1 / self.temperature)
             move = np.random.choice(self.game.action_size, p=temp_action_probs)
-            move_tuple = [move // board.shape[1], move % board.shape[1]]
-
-            print(f"[SelfPlay] Player {current_player} chooses move {move_tuple} (flat: {move})")
+            move_tuple = [move % (board.shape[1] ), move // (board.shape[1])]
 
             board = self.game.get_next_board(board, move_tuple, current_player)
             move_count += 1
@@ -309,15 +308,15 @@ class AlphaZero:
                 returnMemory = []
 
                 final_scores = self.game.get_values(board, num_players)
-                print(f"[SelfPlay] Final scores: {final_scores} scores {sum(board)}")
+                print(f"[SelfPlay] Final scores: {final_scores}")
 
                 for hist_board, hist_action_probs, hist_player in memory:
-                    hist_outcome = final_scores[hist_player - 1]
+
 
                     returnMemory.append((
                         self.game.get_encoded_board(hist_board),
                         hist_action_probs,
-                        hist_outcome
+                        final_scores
                     ))
                 return returnMemory
 
@@ -329,19 +328,22 @@ class AlphaZero:
         random.shuffle(memory)
 
         for batchIdx in range(0, len(memory), self.batch_size):
-            sample = memory[batchIdx:min(len(memory) - 1, batchIdx+self.batch_size)]
+            sample = memory[batchIdx : min(len(memory) - 1, batchIdx + self.batch_size)]
             board, policy_targets, value_targets = zip(*sample)
 
             board, policy_targets, value_targets = np.array(board), np.array(policy_targets), np.array(value_targets).reshape(-1, 1)
 
             board = torch.tensor(board, dtype=torch.float32, device=self.model.device)
-            policy_targets = torch.tensor(policy_targets, dtype=torch.float32, device=self.model.device)
-            value_targets = torch.tensor(value_targets, dtype=torch.float32, device=self.model.device)
+            policy_targets = torch.tensor(policy_targets, dtype=torch.long, device=self.model.device)
+            value_targets = torch.tensor(value_targets, dtype=torch.float32, device=self.model.device).squeeze()
 
             out_policy, out_value = self.model(board)
-
+            
             policy_loss = F.cross_entropy(out_policy, policy_targets)
+            
             value_loss = F.mse_loss(out_value, value_targets)
+            
+            
             loss = policy_loss + value_loss
 
             self.optimizer.zero_grad()
@@ -384,9 +386,9 @@ if __name__ == "__main__":
         optimizer=optimizer,
         game=reversi,
         temperature=1.25,
-        num_iterations=1,
+        num_iterations=10,
         num_selfPlay_iterations=1,
-        num_epochs=500,
+        num_epochs=100,
         batch_size=64,
         C=2,
         dirichlet_epsiolon=0.25,
@@ -395,3 +397,23 @@ if __name__ == "__main__":
     )
 
     alphaZero.learn()
+
+    
+
+
+    reversi = Reversi(max_players=max_players)
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    board, player = reversi.get_initial_board("./maps/simulate.map")
+    print(board)
+
+    encoded_board = reversi.get_encoded_board(board)
+    print(encoded_board)
+
+    tensor_state = torch.tensor(encoded_board, device=device).unsqueeze(0)
+
+    policy, value = model(tensor_state)
+    policy = torch.softmax(policy, axis=1).squeeze(0).detach().numpy()
+
+    print(value, policy)
