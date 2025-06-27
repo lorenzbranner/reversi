@@ -191,7 +191,7 @@ class Reversi:
         for idx, val in zip(sorted_indices, scaled):
             result[idx] = val
 
-        return np.pad(result, (0, self.max_players - len(result)), mode='constant')
+        return np.pad(result, (0, self.max_players - len(result)), mode='constant', constant_values=-1)
     
     def get_encoded_board(self, board):
         """

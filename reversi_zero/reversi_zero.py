@@ -31,7 +31,7 @@ class ResNet(nn.Module):
         self.num_players = num_players
         
         self.startBlock = nn.Sequential(
-            nn.Conv2d(6, num_hidden, kernel_size=3, padding=1),
+            nn.Conv2d(num_players + 2, num_hidden, kernel_size=3, padding=1),   # the input shape will have num players + blocked + empty chanels
             nn.BatchNorm2d(num_hidden),
             nn.ReLU()
         )
@@ -119,13 +119,12 @@ class Node:
         self.prior = prior
 
         self.children = []
-        self.expandable_moves = game.get_valid_moves(board, current_player)
 
         self.visit_count = visit_count
         self.values = np.zeros(num_players)
 
     def is_fully_expanded(self):
-        return np.sum(self.expandable_moves) == 0 and len(self.children) > 0
+        return len(self.children) > 0       # because in MCTS for Alpha zero we will always expand all children at once 
     
     def select(self):
         best_child = None
@@ -158,7 +157,6 @@ class Node:
                 
                 child = Node(game = self.game, C=self.C, board=child_board, num_players=self.num_players, current_player= child_player, parent=self, prior=prob,  action_taken=move)
                 self.children.append(child)
-        return child
     
     def backpropagate(self, values):
         self.visit_count += 1
@@ -169,6 +167,10 @@ class Node:
 
 
 class MCTS:
+    """
+        _summary_
+    """
+    
     def __init__(
         self, 
         game, 
@@ -185,31 +187,19 @@ class MCTS:
         self.C = C
         self.model = model
     
+    
     @torch.no_grad()
     def search(
         self, 
         board, 
         num_players: int,
         root_player: int, 
-        num_searches: int
+        num_searches: int = 50
     ):
         
         root = Node(self.game, self.C, board, num_players, root_player)
 
-        policy, _ = self.model(torch.tensor(self.game.get_encoded_board(board), device=self.model.device).unsqueeze(0))  # policy is shape (num_players, action_size)
-        
-        policy_root_player = torch.softmax(policy[0, root_player - 1], dim=0).cpu().numpy()
-        policy_root_player = (1- self.dirichlet_epsiolon * policy_root_player + self.dirichlet_epsiolon * np.random.dirichlet([self.dirichlet_alpha] * self.game.action_size))
-        
-
-        valid_moves_mask = self.game.get_valid_moves_mask(board, root_player).flatten()
-        
-        policy_root_player *= valid_moves_mask
-        policy_root_player /= np.sum(policy_root_player)        
-        
-        root.expand(policy_root_player)        
-
-        for _ in range(num_searches):
+        for _ in range(num_searches + 1):
             node = root
             
             while node.is_fully_expanded():     # get to the first node that is not fully expanded
@@ -223,25 +213,25 @@ class MCTS:
                 )
                 
                 policy = torch.softmax(policys[0, node.current_player - 1], dim=0).cpu().numpy()
-                policy = (1- self.dirichlet_epsiolon * policy_root_player + self.dirichlet_epsiolon * np.random.dirichlet([self.dirichlet_alpha] * self.game.action_size))
-        
+                policy = (1- self.dirichlet_epsiolon * policy + self.dirichlet_epsiolon * np.random.dirichlet([self.dirichlet_alpha] * self.game.action_size))
+                
                 valid_moves_mask = self.game.get_valid_moves_mask(node.board, node.current_player).flatten()
                 
                 policy *= valid_moves_mask
                 policy /= np.sum(policy)
 
                 values = values.squeeze(0).cpu().numpy()
-
-                node = node.expand(policy)
-                
+                node.expand(policy)
             else:
                 values = self.game.get_values(node.board, node.num_players)
             
             node.backpropagate(values)
-
+        
         action_probs = np.zeros(self.game.action_size)
+        
         for child in root.children:
-            action_probs[child.action_taken] = child.visit_count
+            action_probs[child.action_taken] = child.visit_count    
+      
         action_probs /= np.sum(action_probs)
         
         return action_probs
@@ -289,6 +279,12 @@ class AlphaZero:
         print(f"[SelfPlay] New game started with {num_players} players.")
 
         while True:
+            valid_moves_player = self.game.valid_move_player(board, current_player)
+            
+            if not valid_moves_player:  # if the current player has no valid move skip him and go to the next player 
+               current_player = self.game.get_next_player(current_player, num_players)
+               continue
+
             action_probs = self.mcts.search(
                 board=board,
                 num_players=num_players,
@@ -299,7 +295,9 @@ class AlphaZero:
             memory.append((board, action_probs, current_player))
 
             temp_action_probs = action_probs ** (1 / self.temperature)
-            move = np.random.choice(self.game.action_size, p=temp_action_probs)
+            
+            move = np.random.choice(self.game.action_size, p=temp_action_probs /  np.sum(temp_action_probs))
+            
             move_tuple = [move % (board.shape[1] ), move // (board.shape[1])]
 
             board = self.game.get_next_board(board, move_tuple, current_player)
@@ -313,7 +311,6 @@ class AlphaZero:
                 print(f"[SelfPlay] Final scores: {final_scores}")
 
                 for hist_board, hist_action_probs, hist_player in memory:
-
 
                     returnMemory.append((
                         self.game.get_encoded_board(hist_board),
@@ -341,7 +338,15 @@ class AlphaZero:
 
             out_policy, out_value = self.model(board)
             
+            ## TODO das macht gar keinen sinn hier das für alle zu nehmen wir müssen 
+            
+            print(f"out_policy with shape: {out_policy.shape} from net: {out_policy}")
+            print(f"policy_targets with shape: {policy_targets.shape} from net: {policy_targets}")
+            
             policy_loss = F.cross_entropy(out_policy, policy_targets)
+            
+            print(f"Out_values with shape: {out_value.shape} from net: {out_value}")
+            print(f"values target with shape: {value_targets.shape} from net: {value_targets}")
             
             value_loss = F.mse_loss(out_value, value_targets)
             
@@ -371,6 +376,7 @@ class AlphaZero:
 
 
 if __name__ == "__main__":
+    
     max_players = 4
     
     reversi = Reversi(max_players=max_players)
@@ -388,9 +394,9 @@ if __name__ == "__main__":
         optimizer=optimizer,
         game=reversi,
         temperature=1.25,
-        num_iterations=100,
-        num_selfPlay_iterations=10,
-        num_searches = 100,
+        num_iterations=10,
+        num_selfPlay_iterations=1,
+        num_searches = 10,
         num_epochs=100,
         batch_size=64,
         C=2,
