@@ -2,6 +2,7 @@
 import math
 import random
 import os
+import time
 
 # 3-party import
 import numpy as np
@@ -20,7 +21,7 @@ class ResNet(nn.Module):
     def __init__(
         self, 
         game, 
-        num_resBlocks: int = 1, 
+        num_resBlocks: int = 2, 
         num_hidden: int = 100, 
         device: str = "torch" if torch.cuda.is_available else "cpu",
         num_players: int = 0
@@ -211,9 +212,9 @@ class MCTS:
                 policys, values = self.model(
                     torch.tensor(self.game.get_encoded_board(node.board), device=self.model.device).unsqueeze(0)
                 )
-                
+                        
                 policy = torch.softmax(policys[0, node.current_player - 1], dim=0).cpu().numpy()
-                policy = (1- self.dirichlet_epsiolon * policy + self.dirichlet_epsiolon * np.random.dirichlet([self.dirichlet_alpha] * self.game.action_size))
+                policy = (1- self.dirichlet_epsiolon) * policy + self.dirichlet_epsiolon * np.random.dirichlet([self.dirichlet_alpha] * self.game.action_size)
                 
                 valid_moves_mask = self.game.get_valid_moves_mask(node.board, node.current_player).flatten()
                 
@@ -239,6 +240,10 @@ class MCTS:
 
 
 #######   Define Reversi Zero      #############################################################################################################################
+def log(tag, message, tag_width=7, indent_after_tag=24):
+    tag_str = f"[{tag:<{tag_width}}]"
+    spacing = " " * (indent_after_tag - len(tag_str))
+    print(f"{tag_str}{spacing}{message}")
 
 class AlphaZero:
     def __init__(
@@ -255,7 +260,7 @@ class AlphaZero:
         C: float = 1.2, 
         num_searches: int = 50,
         dirichlet_epsiolon: float = 0.2,
-        dirichlet_alpha: float = 0.2,
+        dirichlet_alpha: float = 0.2
     ):
         self.model = model
         self.optimizer = optimizer
@@ -273,10 +278,10 @@ class AlphaZero:
     def selfPlay(self):
         memory = []
         current_player = 1
-        board, num_players = self.board_generator() if callable(self.board_generator) else random.choice(self.board_generator)
+        board, num_players, map_name = self.board_generator() if callable(self.board_generator) else random.choice(self.board_generator)
 
         move_count = 0
-        print(f"[SelfPlay] New game started with {num_players} players.")
+        log("SelfPlay", f"New game started with {num_players} players on map: {os.path.basename(map_name)}")
 
         while True:
             valid_moves_player = self.game.valid_move_player(board, current_player)
@@ -304,18 +309,20 @@ class AlphaZero:
             move_count += 1
 
             if self.game.game_over(board, num_players):
-                print(f"[SelfPlay] Game over after {move_count} moves.")
+                log("SelfPlay", f"Game over after {move_count} moves.")
+
                 returnMemory = []
 
                 final_scores = self.game.get_values(board, num_players)
-                print(f"[SelfPlay] Final scores: {final_scores}")
+                log("SelfPlay", f"Final scores: {final_scores}.")
 
                 for hist_board, hist_action_probs, hist_player in memory:
 
                     returnMemory.append((
                         self.game.get_encoded_board(hist_board),
                         hist_action_probs,
-                        final_scores
+                        final_scores,
+                        hist_player
                     ))
                 return returnMemory
 
@@ -326,58 +333,84 @@ class AlphaZero:
 
         random.shuffle(memory)
 
+        total_policy_loss = 0
+        total_value_loss = 0
+        total_batches = 0
+
         for batchIdx in range(0, len(memory), self.batch_size):
             sample = memory[batchIdx : min(len(memory) - 1, batchIdx + self.batch_size)]
-            board, policy_targets, value_targets = zip(*sample)
+            board, policy_targets, value_targets, current_player = zip(*sample)
 
             board, policy_targets, value_targets = np.array(board), np.array(policy_targets), np.array(value_targets).reshape(-1, 1)
 
             board = torch.tensor(board, dtype=torch.float32, device=self.model.device)
-            policy_targets = torch.tensor(policy_targets, dtype=torch.long, device=self.model.device)
+            policy_targets = torch.tensor(policy_targets, dtype=torch.float32, device=self.model.device)
             value_targets = torch.tensor(value_targets, dtype=torch.float32, device=self.model.device).squeeze()
 
             out_policy, out_value = self.model(board)
-            
-            ## TODO das macht gar keinen sinn hier das für alle zu nehmen wir müssen 
-            
-            print(f"out_policy with shape: {out_policy.shape} from net: {out_policy}")
-            print(f"policy_targets with shape: {policy_targets.shape} from net: {policy_targets}")
-            
-            policy_loss = F.cross_entropy(out_policy, policy_targets)
-            
-            print(f"Out_values with shape: {out_value.shape} from net: {out_value}")
-            print(f"values target with shape: {value_targets.shape} from net: {value_targets}")
-            
-            value_loss = F.mse_loss(out_value, value_targets)
-            
-            
+            player_indices = torch.tensor(current_player, dtype=torch.long, device=self.model.device) - 1
+            out_policy_selected = out_policy[torch.arange(out_policy.size(0)), player_indices]  # (B, action_size)
+
+            log_probs = F.log_softmax(out_policy_selected, dim=1)
+            policy_loss = F.kl_div(log_probs, policy_targets, reduction="batchmean")    
+            value_loss = F.mse_loss(out_value, value_targets.reshape(out_value.shape))
             loss = policy_loss + value_loss
 
             self.optimizer.zero_grad()
             loss.backward()
             self.optimizer.step()
 
+            total_policy_loss += policy_loss.item()
+            total_value_loss += value_loss.item()
+            total_batches += 1
 
-    def learn(self):
+        avg_policy_loss = total_policy_loss / total_batches
+        avg_value_loss = total_value_loss / total_batches
+        
+        return avg_policy_loss, avg_value_loss
+        
+    def learn(
+        self,
+        checkpoint_folder: str = "models/checkpoints",
+        checkpoint_iteration: int = 10,
+        train_log_iteration: int = 25,
+    ):
         for iteration in range(self.num_iterations):
+            
+            print(f"\n===== [Iteration {iteration + 1}/{self.num_iterations}] =====")
+            
             memory = []
 
+            start_time = time.time()
             self.model.eval()
             for SelPlay_iteration in range(self.num_selfPlay_iterations):
                 memory += self.selfPlay()
 
+            duration = time.time() - start_time
+            log("SelfPlay", f"Completed {self.num_selfPlay_iterations} games in {duration:.2f}s")
+            log("SelfPlay", f"Total samples collected: {len(memory)}")
+          
+            log("Train", f"Start")
             self.model.train()
-            for epoch in range(self.num_epochs):
-                self.train(memory)
+            for epoch in range(1, self.num_epochs + 1):
+                avg_policy_loss, avg_value_loss = self.train(memory)
+                
+                if not epoch % checkpoint_iteration:
+                    log("Train", f"Epoch {epoch}/{self.num_epochs}")
+                    log("Train", f"Avg Policy Loss: {avg_policy_loss:.4f} | Avg Value Loss: {avg_value_loss:.4f}")
 
-            torch.save(self.model.state_dict(), f"model_{iteration}.pt")
-            torch.save(self.optimizer.state_dict(), f"optimizer_{iteration}.pt")
+            if not iteration % checkpoint_iteration:
+                os.makedirs(checkpoint_folder, exist_ok=True)
+                torch.save(self.model.state_dict(), checkpoint_folder + f"model_{self.game.max_players}P_{iteration}.pt")
+                torch.save(self.optimizer.state_dict(),  checkpoint_folder + f"optimizer_{self.game.max_players}P_{iteration}.pt")
 
+                log("Checkpoint", f"Model and optimizer saved at iteration {iteration}")
 
 
 if __name__ == "__main__":
     
-    max_players = 4
+    max_players = 2
+    maps_path = "./maps/2_player/"
     
     reversi = Reversi(max_players=max_players)
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -386,9 +419,11 @@ if __name__ == "__main__":
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001, weight_decay=0.0001)
 
     def board_generator():
-        maps = ["./maps/" + f for f in os.listdir("./maps") if f.endswith(".map")]
-        return reversi.get_initial_board(random.choice(maps))
-
+        maps = [maps_path + f for f in os.listdir(maps_path) if f.endswith(".map")]
+        selected_map = random.choice(maps)
+        board, num_players = reversi.get_initial_board(selected_map)
+        return board, num_players, selected_map
+    
     alphaZero = AlphaZero(
         model=model,
         optimizer=optimizer,
@@ -406,11 +441,8 @@ if __name__ == "__main__":
     )
 
     alphaZero.learn()
-
     
-
-
-    reversi = Reversi(max_players=max_players)
+    ####
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 

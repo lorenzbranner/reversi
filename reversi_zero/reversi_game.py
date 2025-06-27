@@ -208,7 +208,7 @@ class Reversi:
         If fewer than 3 or 4 players are playing, the unused player channels will be all zeros.
         """
         height, width = board.shape     # get board size
-        channels = 6                    # 1 empty + 4 players + 1 blocked
+        channels = self.max_players + 2                    # 1 empty + 4 players + 1 blocked
         
         encoded = np.zeros((channels, height, width), dtype=np.float32)
 
@@ -217,6 +217,25 @@ class Reversi:
         for p in range(1, self.max_players + 1):
             encoded[p] = (board == p)           # Player p stones
         
-        encoded[5] = (board == 5)               # Blocked fields
+        encoded[self.max_players + 1] = (board == 5)               # Blocked fields
 
         return encoded
+    
+    def print_board(self, board):
+        print("   " + " ".join(f"{x:2}" for x in range(board.shape[1])))
+        print("  +" + "---" * board.shape[1] + "+")
+
+        for y in range(board.shape[0]):
+            row = []
+            for x in range(board.shape[1]):
+                val = board[y, x]
+                if val == 0:
+                    cell = "."
+                elif val == 5:
+                    cell = "#"
+                else:
+                    cell = str(val)
+                row.append(f"{cell:2}")
+            print(f"{y:2}| {' '.join(row)} |")
+
+        print("  +" + "---" * board.shape[1] + "+")
