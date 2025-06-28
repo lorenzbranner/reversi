@@ -209,20 +209,42 @@ class MCTS:
             game_finished = self.game.game_over(node.board, node.num_players)       # check if in that node the game is finished
 
             if not game_finished:
-                policys, values = self.model(
-                    torch.tensor(self.game.get_encoded_board(node.board), device=self.model.device).unsqueeze(0)
-                )
-                        
-                policy = torch.softmax(policys[0, node.current_player - 1], dim=0).cpu().numpy()
-                policy = (1- self.dirichlet_epsiolon) * policy + self.dirichlet_epsiolon * np.random.dirichlet([self.dirichlet_alpha] * self.game.action_size)
                 
                 valid_moves_mask = self.game.get_valid_moves_mask(node.board, node.current_player).flatten()
                 
-                policy *= valid_moves_mask
-                policy /= np.sum(policy)
+                if np.sum(valid_moves_mask):
+                
+                    policys, values = self.model(
+                        torch.tensor(self.game.get_encoded_board(node.board), device=self.model.device).unsqueeze(0)
+                    )
+                            
+                    policy = torch.softmax(policys[0, node.current_player - 1], dim=0).cpu().numpy()
+                    policy = (1- self.dirichlet_epsiolon) * policy + self.dirichlet_epsiolon * np.random.dirichlet([self.dirichlet_alpha] * self.game.action_size)
+                    
+                    policy *= valid_moves_mask
+                    policy_sum = np.sum(policy)
+                    
+                    if policy_sum == 0:                             # fall back so we dont / 0 
+                        policy = valid_moves_mask.astype(np.float32)
+                        policy /= np.sum(policy)
+                    else:
+                        policy /= policy_sum
 
-                values = values.squeeze(0).cpu().numpy()
-                node.expand(policy)
+                    values = values.squeeze(0).cpu().numpy()
+                    node.expand(policy)
+                else:
+                    # we need to skip this player because he has no valid moves 
+                    child_player = self.game.get_next_player(node.current_player, node.num_players)
+                    # create child node with the same board but next player and 
+                    child = Node(game=self.game, C=self.C, board=node.board.copy(), num_players=node.num_players, current_player=child_player, parent=node)
+                    
+                    _, values = self.model(
+                        torch.tensor(self.game.get_encoded_board(node.board), device=self.model.device).unsqueeze(0)
+                    )
+                    
+                    node.children.append(child)
+                    values = values.squeeze(0).cpu().numpy()
+                    child.backpropagate(values)
             else:
                 values = self.game.get_values(node.board, node.num_players)
             
@@ -236,7 +258,6 @@ class MCTS:
         action_probs /= np.sum(action_probs)
         
         return action_probs
-
 
 
 #######   Define Reversi Zero      #############################################################################################################################
@@ -328,7 +349,15 @@ class AlphaZero:
 
 
     def train(self, memory):
+        """
+            _summary_
 
+            Args:
+                memory (_type_): _description_
+
+            Returns:
+                _type_: _description_
+        """
         random.shuffle(memory)
 
         total_policy_loss = 0
@@ -423,6 +452,10 @@ class AlphaZero:
                 root_player=current_player,
                 num_searches=self.num_searches
             )
+            valid_moves_mask = self.game.get_valid_moves_mask(board, current_player).flatten()
+            action_probs *= valid_moves_mask
+            action_probs /= np.sum(action_probs) 
+
             move = np.argmax(action_probs)
             return move
     

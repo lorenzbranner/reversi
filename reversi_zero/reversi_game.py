@@ -193,6 +193,34 @@ class Reversi:
 
         return np.pad(result, (0, self.max_players - len(result)), mode='constant', constant_values=-1)
     
+    
+    def get_stone_counts(self, board, num_players):
+        """
+        Counts the number of stones for each player on the board.
+
+        Parameters:
+            board (np.ndarray): The game board as a 2D NumPy array.
+            num_players (int): The number of currently active players in the game.
+
+        Returns:
+            np.ndarray: A 1D array of length `self.max_players` containing the number of stones 
+                        for each player. Players not currently active will have a count of 0.
+                        The counts are aligned to player indices 1 to `num_players` and padded
+                        with zeros to reach length `self.max_players`.
+        """
+        player_counts = np.array([np.count_nonzero(board == p) for p in range(1, num_players + 1)])
+
+        active_indices = np.nonzero(player_counts)[0]
+        
+        if len(active_indices) == 0:
+            return np.zeros(self.max_players, dtype=np.float32)
+
+        counts = player_counts[active_indices]
+        
+        return np.pad(counts, (0, self.max_players - len(counts)), mode='constant', constant_values=0)
+
+    
+    
     def get_encoded_board(self, board):
         """
         Converts the Reversi board into a tensor format suitable for a neural network.

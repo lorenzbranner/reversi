@@ -38,15 +38,16 @@ def evaluate(game, agent1, agent2, board, num_players, swap_roles=False):
         move_count += 1
 
     scores = game.get_values(board, num_players)
+    stone_counts = game.get_stone_counts(board, num_players)
     winner = int(np.argmax(scores)) + 1 if np.max(scores) != np.min(scores) else 0  
 
-    return winner, scores, move_count
+    return winner, scores, move_count, stone_counts
 
 
 
 if __name__ == "__main__":
-    maps_dir = "./maps/2_player/"
-    num_games_per_map = 5
+    maps_dir = "./maps/2_player_train/"
+    num_games_per_map = 1
 
     reversi = Reversi(max_players=2)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -55,8 +56,8 @@ if __name__ == "__main__":
     model.load_state_dict(torch.load("models/checkpoints/model_2P_10.pt", map_location=device))
     model.eval()
 
-    agent1 = AlphaZero(model=model, game=reversi)
-    agent2 = MCTS(game=reversi, C = 2)
+    agent1 = AlphaZero(model=model, game=reversi, num_searches=100)
+    agent2 = MCTS(game=reversi, C = 2, num_searches=100)
 
     results = {1: 0, 2: 0} 
 
@@ -68,11 +69,14 @@ if __name__ == "__main__":
         for i in range(num_games_per_map):
             board, num_players = reversi.get_initial_board(os.path.join(maps_dir, map_file))
             swap = (i % 2 == 1)
-            winner, scores, moves = evaluate(reversi, agent1, agent2, board, num_players, swap_roles=swap)
+            winner, scores, moves, stone_counts = evaluate(reversi, agent1, agent2, board, num_players, swap_roles=swap)
 
             role = "AlphaZero" if (winner == 1 and not swap) or (winner == 2 and swap) else (
-                   "Random" if winner != 0 else "Draw")
-            print(f"  Game {i+1}/{num_games_per_map} - Moves: {moves} | Winner: {role} | Scores: {scores}")
+                   "MCTS" if winner != 0 else "Draw")
+            
+            player_order = "Player1: AlphaZero, Player2: MCTS" if not swap else  "Player1: MCTS, Player2: AlphaZero"
+            
+            print(f"  Game {i+1}/{num_games_per_map} - Moves: {moves} | {player_order} | Winner: {role} | Scores: {scores} | Stone Counts: {stone_counts}")
             results[winner] += 1
         print()
 

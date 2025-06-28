@@ -9,7 +9,16 @@ import numpy as np
 
 
 class Node:
-    def __init__(self, game, C, board, num_players, current_player, parent=None, move_taken=None):
+    def __init__(
+        self, 
+        game,
+        C,
+        board,
+        num_players,
+        current_player,
+        parent=None,
+        move_taken=None
+    ):
         self.game = game
         self.C = C
         self.board = board
@@ -25,7 +34,7 @@ class Node:
         self.values = np.zeros(num_players)
         
     def is_fully_expanded(self):
-        return np.sum(self.expandable_moves) == 0 and len(self.children) > 0
+        return np.sum(len(self.expandable_moves)) == 0 and len(self.children) > 0
     
     def select(self):
         best_child = None
@@ -44,15 +53,28 @@ class Node:
         return q_value + self.C * math.sqrt(math.log(self.visit_count) / child.visit_count)
     
     def expand(self):
+        if not self.expandable_moves:
+            next_player = self.game.get_next_player(self.current_player, self.num_players)      # skip player and add a skip_child node 
+            skip_child = Node(
+                game=self.game,
+                C=self.C,
+                board=self.board.copy(),
+                num_players=self.num_players,
+                current_player=next_player,
+                parent=self,
+                move_taken=None
+            )
+            self.children.append(skip_child)
+            return skip_child
+
         move = random.choice(self.expandable_moves)
         self.expandable_moves.remove(move)
-        
+
         child_board = self.board.copy()
         child_board = self.game.get_next_board(child_board, move, self.current_player)
+        next_player = self.game.get_next_player(self.current_player, self.num_players)
 
-        child_player = self.game.get_next_player(self.current_player, self.num_players)
-        
-        child = Node(self.game, self.C, child_board, self.num_players, child_player, self, move)
+        child = Node(self.game, self.C, child_board, self.num_players, next_player, self, move)
         self.children.append(child)
         return child
     
@@ -83,14 +105,20 @@ class Node:
 
 
 class MCTS:
-    def __init__(self, game, C):
+    def __init__(
+        self, 
+        game, 
+        C,
+        num_searches: int = 100
+    ):
         self.game = game
         self.C = C
+        self.num_searches = num_searches
         
-    def search(self, board, num_players, player, num_searches):
+    def search(self, board, num_players, player):
         root = Node(self.game, self.C, board, num_players, player)
         
-        for search in range(num_searches):
+        for search in range(self.num_searches):
             node = root
             
             while node.is_fully_expanded():
@@ -113,12 +141,11 @@ class MCTS:
         action_probs /= np.sum(action_probs)
         return action_probs
     
-    def get_action(self, board, current_player, num_players, num_searches: int ):
+    def get_action(self, board, current_player, num_players):
         action_probs = self.search(
             board=board,
             num_players=num_players,
             player=current_player,
-            num_searches=num_searches
         )
 
         flat_probs = action_probs.flatten()
