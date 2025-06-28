@@ -6,6 +6,7 @@ import time
 
 # 3-party import
 import numpy as np
+from sympy import false
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -402,10 +403,11 @@ class AlphaZero:
     def learn(
         self,
         checkpoint_folder: str = "models/checkpoints/",
+        checkpoint_start: int = 0,
         checkpoint_iteration: int = 10,
         train_log_iteration: int = 25,
     ):
-        for iteration in range(self.num_iterations):
+        for iteration in range(checkpoint_start, self.num_iterations):
             
             print(f"\n===== [Iteration {iteration + 1}/{self.num_iterations}] =====")
             
@@ -463,13 +465,21 @@ class AlphaZero:
 if __name__ == "__main__":
     
     max_players = 2
-    maps_path = "./maps/2_player/"
+    maps_path = "./maps/2_player_train/"
+    from_checkpoint = True
+    checkpoint = 10
     
     reversi = Reversi(max_players=max_players)
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    model = ResNet(reversi, 4, 64, device, max_players)
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.001, weight_decay=0.0001)
+    if not from_checkpoint:
+        model = ResNet(reversi, 4, 64, device, max_players)
+        optimizer = torch.optim.Adam(model.parameters(), lr=0.001, weight_decay=0.0001)
+    else:
+        model = ResNet(reversi, 4, 64, device, max_players)
+        model.load_state_dict(torch.load(f"models/checkpoints/model_2P_{checkpoint}.pt", map_location=device))
+        optimizer = torch.optim.Adam(model.parameters(), lr=0.001, weight_decay=0.0001)
+        optimizer.load_state_dict(torch.load(f"models/checkpoints/model2P_{checkpoint}.pt", map_location=device))
 
     def board_generator():
         maps = [maps_path + f for f in os.listdir(maps_path) if f.endswith(".map")]
@@ -483,17 +493,19 @@ if __name__ == "__main__":
         game=reversi,
         temperature=1.25,
         num_iterations=100,
-        num_selfPlay_iterations=10,
-        num_searches = 100,
-        num_epochs=100,
-        batch_size=64,
+        num_selfPlay_iterations=30,
+        num_searches = 500,
+        num_epochs=500,
+        batch_size=256,
         C=2,
         dirichlet_epsiolon=0.25,
         dirichlet_alpha=0.3,
         board_generator=board_generator
     )
 
-    alphaZero.learn()
+    alphaZero.learn(
+        checkpoint_start = 0 if not from_checkpoint else checkpoint
+    )
     
     ####
 
