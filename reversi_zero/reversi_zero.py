@@ -249,10 +249,10 @@ class AlphaZero:
     def __init__(
         self,
         model, 
-        optimizer,
         game,
-        temperature,
-        board_generator,  # function or list of boards
+        optimizer = None,
+        temperature: float = 1,
+        board_generator: callable = None,  # function or list of boards
         num_iterations: int = 3,
         num_selfPlay_iterations: int = 500,
         num_epochs: int = 4,
@@ -298,11 +298,9 @@ class AlphaZero:
             )
 
             memory.append((board, action_probs, current_player))
-
+            
             temp_action_probs = action_probs ** (1 / self.temperature)
-            
             move = np.random.choice(self.game.action_size, p=temp_action_probs /  np.sum(temp_action_probs))
-            
             move_tuple = [move % (board.shape[1] ), move // (board.shape[1])]
 
             board = self.game.get_next_board(board, move_tuple, current_player)
@@ -338,9 +336,12 @@ class AlphaZero:
         total_batches = 0
 
         for batchIdx in range(0, len(memory), self.batch_size):
-            sample = memory[batchIdx : min(len(memory) - 1, batchIdx + self.batch_size)]
+            sample = memory[batchIdx : batchIdx + self.batch_size]
+            
+            if len(sample) == 0:
+                continue
+                        
             board, policy_targets, value_targets, current_player = zip(*sample)
-
             board, policy_targets, value_targets = np.array(board), np.array(policy_targets), np.array(value_targets).reshape(-1, 1)
 
             board = torch.tensor(board, dtype=torch.float32, device=self.model.device)
@@ -371,7 +372,7 @@ class AlphaZero:
         
     def learn(
         self,
-        checkpoint_folder: str = "models/checkpoints",
+        checkpoint_folder: str = "models/checkpoints/",
         checkpoint_iteration: int = 10,
         train_log_iteration: int = 25,
     ):
@@ -390,12 +391,14 @@ class AlphaZero:
             log("SelfPlay", f"Completed {self.num_selfPlay_iterations} games in {duration:.2f}s")
             log("SelfPlay", f"Total samples collected: {len(memory)}")
           
+            print() # one new line
+          
             log("Train", f"Start")
             self.model.train()
             for epoch in range(1, self.num_epochs + 1):
                 avg_policy_loss, avg_value_loss = self.train(memory)
                 
-                if not epoch % checkpoint_iteration:
+                if not epoch % train_log_iteration:
                     log("Train", f"Epoch {epoch}/{self.num_epochs}")
                     log("Train", f"Avg Policy Loss: {avg_policy_loss:.4f} | Avg Value Loss: {avg_value_loss:.4f}")
 
@@ -406,7 +409,24 @@ class AlphaZero:
 
                 log("Checkpoint", f"Model and optimizer saved at iteration {iteration}")
 
-
+    @torch.no_grad()
+    def get_action(
+        self, 
+        board, 
+        current_player, 
+        num_players
+    ):
+        with torch.no_grad():
+            action_probs = self.mcts.search(
+                board=board,
+                num_players=num_players,
+                root_player=current_player,
+                num_searches=self.num_searches
+            )
+            move = np.argmax(action_probs)
+            return move
+    
+    
 if __name__ == "__main__":
     
     max_players = 2
@@ -429,9 +449,9 @@ if __name__ == "__main__":
         optimizer=optimizer,
         game=reversi,
         temperature=1.25,
-        num_iterations=10,
-        num_selfPlay_iterations=1,
-        num_searches = 10,
+        num_iterations=100,
+        num_selfPlay_iterations=10,
+        num_searches = 100,
         num_epochs=100,
         batch_size=64,
         C=2,
