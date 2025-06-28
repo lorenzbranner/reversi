@@ -11,7 +11,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 # projekt import
-from reversi_game import Reversi
+from reversi_game.reversi_game import Reversi
 from reversi_zero import ResNet, AlphaZero
 from agends.normal_mcts import MCTS
 

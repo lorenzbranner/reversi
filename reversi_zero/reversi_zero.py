@@ -13,8 +13,7 @@ import torch.nn.functional as F
 from torch.utils.data import TensorDataset, DataLoader
 
 # projekt import
-from reversi_game import Reversi
-
+from reversi_game.reversi_game import Reversi
 
 
 ######## Define Models for Reversi Zero #################################################################################################################

@@ -1,10 +1,13 @@
 # std-lib import
+import os
+import sys
+sys.path.append(os.path.dirname(__file__))
 
 # 3-party import
 import numpy as np
 
 # projekt import
-
+import reversi_cpp         # import reversie_cpp file 
 
 
 def parse_map_file(filepath, max_players):
@@ -91,7 +94,7 @@ class Reversi:
         return valid_moves
     
     
-    def get_valid_moves_mask(
+    def get_valid_moves_mask_slow(
         self, 
         board, 
         player: int
@@ -119,6 +122,29 @@ class Reversi:
                     valid_moves_mask[y, x] = 1
 
         return valid_moves_mask
+    
+    
+    def get_valid_moves_mask(self, board, player: int):
+        """
+            Computes the valid move mask using the fast C++ backend.
+            Generates a binary mask indicating valid moves for the specified player.
+
+            Each cell in the mask is set to 1 if placing a move at that position is valid
+            for the given player; otherwise, it is set to 0.
+
+            Args:
+                board: The current game board.
+                player (int): The player ID for whom the valid move mask is generated.
+
+            Returns:
+                np.ndarray: A 2D array of shape (height, width) with 1s at valid move positions
+                and 0s elsewhere.
+        """
+        mask = np.zeros((self.height, self.width), dtype=np.uint8)
+        valid_moves = reversi_cpp.get_valid_moves(board.tolist(), player)
+        for x, y in valid_moves:
+            mask[y, x] = 1
+        return mask
     
     
     def is_valid_move(self, board, x, y, player):
