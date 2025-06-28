@@ -10,6 +10,7 @@ from sympy import false
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.utils.data import TensorDataset, DataLoader
 
 # projekt import
 from reversi_game import Reversi
@@ -351,40 +352,48 @@ class AlphaZero:
 
     def train(self, memory):
         """
-            _summary_
+        Trains the model using self-play experience data.
 
-            Args:
-                memory (_type_): _description_
+        This function converts the collected memory (game states, policy targets, value targets, 
+        and current players) into a PyTorch DataLoader and trains the neural network over multiple 
+        mini-batches using KL divergence for the policy head and mean squared error for the value head.
 
-            Returns:
-                _type_: _description_
+        Args:
+            memory (List[Tuple[np.ndarray, np.ndarray, np.ndarray, int]]): 
+                A list of tuples containing:
+                - encoded board state as NumPy array,
+                - target policy as a probability distribution,
+                - final game result (value target),
+                - current player index.
+
+        Returns:
+            Tuple[float, float]: 
+                The average policy loss and average value loss over all batches.
         """
-        random.shuffle(memory)
+        if len(memory) == 0:
+            return 0.0, 0.0
 
-        total_policy_loss = 0
-        total_value_loss = 0
+        board, policy_targets, value_targets, current_player = zip(*memory)
+
+        board_tensor = torch.tensor(np.array(board), dtype=torch.float32, device=self.model.device)
+        policy_tensor = torch.tensor(np.array(policy_targets), dtype=torch.float32, device=self.model.device)
+        value_tensor = torch.tensor(np.array(value_targets), dtype=torch.float32, device=self.model.device).squeeze()
+        player_tensor = torch.tensor(np.array(current_player), dtype=torch.long, device=self.model.device) - 1  # 0-based
+
+        dataset = TensorDataset(board_tensor, policy_tensor, value_tensor, player_tensor)
+        loader = DataLoader(dataset, batch_size=self.batch_size, shuffle=True)
+
+        total_policy_loss = 0.0
+        total_value_loss = 0.0
         total_batches = 0
 
-        for batchIdx in range(0, len(memory), self.batch_size):
-            sample = memory[batchIdx : batchIdx + self.batch_size]
-            
-            if len(sample) == 0:
-                continue
-                        
-            board, policy_targets, value_targets, current_player = zip(*sample)
-            board, policy_targets, value_targets = np.array(board), np.array(policy_targets), np.array(value_targets).reshape(-1, 1)
+        for board_batch, policy_batch, value_batch, player_idx_batch in loader:
+            out_policy, out_value = self.model(board_batch)
+            selected_policy = out_policy[torch.arange(out_policy.size(0)), player_idx_batch]
 
-            board = torch.tensor(board, dtype=torch.float32, device=self.model.device)
-            policy_targets = torch.tensor(policy_targets, dtype=torch.float32, device=self.model.device)
-            value_targets = torch.tensor(value_targets, dtype=torch.float32, device=self.model.device).squeeze()
-
-            out_policy, out_value = self.model(board)
-            player_indices = torch.tensor(current_player, dtype=torch.long, device=self.model.device) - 1
-            out_policy_selected = out_policy[torch.arange(out_policy.size(0)), player_indices]  # (B, action_size)
-
-            log_probs = F.log_softmax(out_policy_selected, dim=1)
-            policy_loss = F.kl_div(log_probs, policy_targets, reduction="batchmean")    
-            value_loss = F.mse_loss(out_value, value_targets.reshape(out_value.shape))
+            log_probs = F.log_softmax(selected_policy, dim=1)
+            policy_loss = F.kl_div(log_probs, policy_batch, reduction="batchmean")
+            value_loss = F.mse_loss(out_value, value_batch.reshape(out_value.shape))
             loss = policy_loss + value_loss
 
             self.optimizer.zero_grad()
@@ -397,8 +406,9 @@ class AlphaZero:
 
         avg_policy_loss = total_policy_loss / total_batches
         avg_value_loss = total_value_loss / total_batches
-        
+
         return avg_policy_loss, avg_value_loss
+        
         
     def learn(
         self,
@@ -440,6 +450,7 @@ class AlphaZero:
 
                 log("Checkpoint", f"Model and optimizer saved at iteration {iteration}")
 
+
     @torch.no_grad()
     def get_action(
         self, 
@@ -479,7 +490,7 @@ if __name__ == "__main__":
         model = ResNet(reversi, 4, 64, device, max_players)
         model.load_state_dict(torch.load(f"models/checkpoints/model_2P_{checkpoint}.pt", map_location=device))
         optimizer = torch.optim.Adam(model.parameters(), lr=0.001, weight_decay=0.0001)
-        optimizer.load_state_dict(torch.load(f"models/checkpoints/model2P_{checkpoint}.pt", map_location=device))
+        optimizer.load_state_dict(torch.load(f"models/checkpoints/optimizer_2P_{checkpoint}.pt", map_location=device))
 
     def board_generator():
         maps = [maps_path + f for f in os.listdir(maps_path) if f.endswith(".map")]
@@ -495,7 +506,7 @@ if __name__ == "__main__":
         num_iterations=100,
         num_selfPlay_iterations=30,
         num_searches = 500,
-        num_epochs=500,
+        num_epochs=300,
         batch_size=256,
         C=2,
         dirichlet_epsiolon=0.25,
