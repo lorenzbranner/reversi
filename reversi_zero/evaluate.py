@@ -30,7 +30,7 @@ def evaluate(game, agent1, agent2, board, num_players, swap_roles=False):
         if not game.valid_move_player(board, current_player):
             current_player = game.get_next_player(current_player, num_players)
             continue
-
+        
         move = agent.get_action(board, current_player, num_players)
         move_tuple = [move % board.shape[1], move // board.shape[1]]
         board = game.get_next_board(board, move_tuple, current_player)
@@ -53,7 +53,7 @@ if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     model = ResNet(reversi, 4, 64, device, num_players=2)
-    model.load_state_dict(torch.load("models/checkpoints/model_2P_10.pt", map_location=device))
+    model.load_state_dict(torch.load("models/checkpoints/model_2P_20.pt", map_location=device))
     model.eval()
 
     agent1 = AlphaZero(model=model, game=reversi, num_searches=100)

@@ -1,4 +1,5 @@
 # std-lib import
+from curses import def_shell_mode
 import os
 import sys
 sys.path.append(os.path.dirname(__file__))
@@ -45,8 +46,14 @@ def parse_map_file(filepath, max_players):
 
 
 class Reversi:
+    """
+    
+    """
     DIRECTIONS = [(-1, 0), (-1, 1), (0, 1), (1, 1),
                   (1, 0), (1, -1), (0, -1), (-1, -1)]
+    
+    use_cpp_backend: bool = True 
+    
     def __init__(
         self,
         max_players: int
@@ -65,7 +72,8 @@ class Reversi:
     ):        
         return parse_map_file(filepath, self.max_players)
 
-    def get_next_board(self, board, move, player):
+
+    def get_next_board_python(self, board, move, player):
         board = board.copy()
         x, y = move[0], move[1]
         board[y, x] = player
@@ -84,8 +92,18 @@ class Reversi:
                 cx += dx
                 cy += dy
         return board
+
+    def get_next_board_cpp(self, board, move, player):
+        next_board = reversi_cpp.get_next_board(board.tolist(), move, player)
+        return np.array(next_board, dtype=np.uint8)
+
+    def get_next_board(self, board, move, player):
+        if self.use_cpp_backend:
+            return self.get_next_board_cpp(board, move, player)
+        return self.get_next_board_python(board, move, player)
     
-    def get_valid_moves(self, board, player):
+    
+    def get_valid_moves_python(self, board, player):
         valid_moves = []
         for y in range(self.height):
             for x in range(self.width):
@@ -93,8 +111,17 @@ class Reversi:
                     valid_moves.append((x, y))
         return valid_moves
     
+    def get_valid_moves_cpp(self, board, player):
+        return reversi_cpp.get_valid_moves(board.tolist(), player)
+
+    def get_valid_moves(self, board, player):
+        if self.use_cpp_backend:
+            return self.get_valid_moves_cpp(board=board, player=player)
+        
+        return self.get_valid_moves_python(board=board, player=player)
     
-    def get_valid_moves_mask_slow(
+    
+    def get_valid_moves_mask_python(
         self, 
         board, 
         player: int
@@ -124,7 +151,7 @@ class Reversi:
         return valid_moves_mask
     
     
-    def get_valid_moves_mask(self, board, player: int):
+    def get_valid_moves_mask_cpp(self, board, player: int):
         """
             Computes the valid move mask using the fast C++ backend.
             Generates a binary mask indicating valid moves for the specified player.
@@ -147,6 +174,29 @@ class Reversi:
         return mask
     
     
+    def get_valid_moves_mask(self, board, player: int):
+        """
+           
+            Generates a binary mask indicating valid moves for the specified player.
+            Uses eather the cpp or the python function sed by the class variable
+            
+            Each cell in the mask is set to 1 if placing a move at that position is valid
+            for the given player; otherwise, it is set to 0.
+
+            Args:
+                board: The current game board.
+                player (int): The player ID for whom the valid move mask is generated.
+
+            Returns:
+                np.ndarray: A 2D array of shape (height, width) with 1s at valid move positions
+                and 0s elsewhere.
+        """
+        if self.use_cpp_backend:
+            return self.get_valid_moves_mask_cpp(board=board, player=player)
+        
+        return self.get_valid_moves_mask_python(board=board, player=player)
+    
+    
     def is_valid_move(self, board, x, y, player):
         if not (0 <= x < self.width and 0 <= y < self.height):
             return False
@@ -158,8 +208,9 @@ class Reversi:
                 return True
         return False
 
+
     def validate_direction(self, board, x, y, dx, dy, player):
-        enemy_range = set(range(1, 10)) - {player}
+        enemy_range = set(range(1, 4)) - {player}
         x += dx
         y += dy
         found_enemy = False
@@ -175,19 +226,34 @@ class Reversi:
             x += dx
             y += dy
         return False
-        
-    def valid_move_player(self, board, player):
+            
+    def valid_move_player_python(self, board, player):
         for y in range(self.height):
             for x in range(self.width):
                 if self.is_valid_move(board, x, y, player):
                     return True
         return False
 
-    def game_over(self, board, num_player) -> bool:
+    
+    def valid_move_player(self, board, player):
+        if self.use_cpp_backend:
+            return reversi_cpp.valid_move_player(board.tolist(), player)
+        
+        return self.valid_move_player_python(board=board, player=player)
+
+
+    def game_over_python(self, board, num_player) -> bool:
         for player in range(1, num_player + 1):
             if self.valid_move_player(board, player):
                 return False
         return True
+    
+    def game_over(self, board, num_player) -> bool:
+        if self.use_cpp_backend:
+            return reversi_cpp.game_over(board.tolist(), num_player)
+        
+        return self.game_over_python(board=board, num_player=num_player)
+    
     
     def get_next_player(self, player, num_players):
         if player == num_players:
@@ -249,27 +315,27 @@ class Reversi:
     
     def get_encoded_board(self, board):
         """
-        Converts the Reversi board into a tensor format suitable for a neural network.
-        Returns an array with shape (channels, height, width).
+            Converts the Reversi board into a tensor format suitable for a neural network.
+            Returns an array with shape (channels, height, width).
 
-        Channel 0: Empty fields (value 0)
-        Channel 1: Player 1 stones
-        Channel 2: Player 2 stones
-        Channel 3: Player 3 stones (if present)
-        Channel 4: Player 4 stones (if present)
-        Channel 5: Blocked fields (value 5)
+            Channel 0: Empty fields (value 0)
+            Channel 1: Player 1 stones
+            Channel 2: Player 2 stones
+            Channel 3: Player 3 stones (if present)
+            Channel 4: Player 4 stones (if present)
+            Channel 5: Blocked fields (value 5)
 
-        If fewer than 3 or 4 players are playing, the unused player channels will be all zeros.
+            If fewer than 3 or 4 players are playing, the unused player channels will be all zeros.
         """
-        height, width = board.shape     # get board size
-        channels = self.max_players + 2                    # 1 empty + 4 players + 1 blocked
+        height, width = board.shape                                 # get board size
+        channels = self.max_players + 2                             # 1 empty + 4 players + 1 blocked
         
         encoded = np.zeros((channels, height, width), dtype=np.float32)
 
-        encoded[0] = (board == 0)       # Empty fields
+        encoded[0] = (board == 0)                                  # Empty fields
         
         for p in range(1, self.max_players + 1):
-            encoded[p] = (board == p)           # Player p stones
+            encoded[p] = (board == p)                              # Player p stones
         
         encoded[self.max_players + 1] = (board == 5)               # Blocked fields
 
@@ -283,10 +349,8 @@ class Reversi:
             row = []
             for x in range(board.shape[1]):
                 val = board[y, x]
-                if val == 0:
-                    cell = "."
-                elif val == 5:
-                    cell = "#"
+                if val == 5:
+                    cell = "-"
                 else:
                     cell = str(val)
                 row.append(f"{cell:2}")

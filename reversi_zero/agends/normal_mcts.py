@@ -137,6 +137,8 @@ class MCTS:
             
         action_probs = np.zeros((self.game.height, self.game.width))
         for child in root.children:
+            if child.move_taken is None:
+                continue
             action_probs[child.move_taken[1], child.move_taken[0]] = child.visit_count
         action_probs /= np.sum(action_probs)
         return action_probs

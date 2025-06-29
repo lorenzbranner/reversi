@@ -416,9 +416,9 @@ class AlphaZero:
         checkpoint_iteration: int = 10,
         train_log_iteration: int = 25,
     ):
-        for iteration in range(checkpoint_start, self.num_iterations):
+        for iteration in range(checkpoint_start + 1, self.num_iterations):
             
-            print(f"\n===== [Iteration {iteration + 1}/{self.num_iterations}] =====")
+            print(f"\n===== [Iteration {iteration}/{self.num_iterations}] =====")
             
             memory = []
 
