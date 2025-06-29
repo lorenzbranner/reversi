@@ -1,6 +1,6 @@
 # Reversi Zero – High-Performance Reversi Engine (Python + C++)
 
-This project implements a customizable Reversi engine that supports up to **4 players** (because blocked fileds are 5 if you change this more players are possible), **blocked fields**, and **map-based game setup**. It combines a fast **C++ backend** with a flexible **Python interface**, designed for AI agents like **MCTS** and **AlphaZero**.
+This implements a customizable Reversi engine that supports up to **4 players** (because blocked fileds are 5 if you change this more players are possible), **blocked fields**, and **map-based game setup**. It combines a fast **C++ backend** with a flexible **Python interface**, designed for AI agents like **MCTS** and **AlphaZero**.
 
 ---
 

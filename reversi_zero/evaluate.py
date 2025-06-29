@@ -13,7 +13,7 @@ import torch.nn.functional as F
 # projekt import
 from reversi_game.reversi_game import Reversi
 from reversi_zero import ResNet, AlphaZero
-from agends.normal_mcts import MCTS
+from agents.normal_mcts import MCTS
 
 
 def evaluate(game, agent1, agent2, board, num_players, swap_roles=False):
@@ -39,15 +39,15 @@ def evaluate(game, agent1, agent2, board, num_players, swap_roles=False):
 
     scores = game.get_values(board, num_players)
     stone_counts = game.get_stone_counts(board, num_players)
+    
     winner = int(np.argmax(scores)) + 1 if np.max(scores) != np.min(scores) else 0  
 
     return winner, scores, move_count, stone_counts
 
 
-
 if __name__ == "__main__":
     maps_dir = "./maps/2_player_train/"
-    num_games_per_map = 1
+    num_games_per_map = 10
 
     reversi = Reversi(max_players=2)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -71,8 +71,7 @@ if __name__ == "__main__":
             swap = (i % 2 == 1)
             winner, scores, moves, stone_counts = evaluate(reversi, agent1, agent2, board, num_players, swap_roles=swap)
 
-            role = "AlphaZero" if (winner == 1 and not swap) or (winner == 2 and swap) else (
-                   "MCTS" if winner != 0 else "Draw")
+            role = "AlphaZero" if (winner == 1 and not swap) or (winner == 2 and swap) else "MCTS" 
             
             player_order = "Player1: AlphaZero, Player2: MCTS" if not swap else  "Player1: MCTS, Player2: AlphaZero"
             

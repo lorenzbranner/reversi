@@ -8,7 +8,7 @@ sys.path.append(os.path.dirname(__file__))
 import numpy as np
 
 # projekt import
-import reversi_cpp         # import reversie_cpp file 
+import reversi_cpp         # type: ignore # import reversie_cpp file 
 
 
 def parse_map_file(filepath, max_players):
@@ -341,19 +341,43 @@ class Reversi:
 
         return encoded
     
+    
     def print_board(self, board):
+        """
+        Prints the current board state using emoji symbols for better readability.
+
+        Legend:
+        - 0: Empty field ("  ")
+        - 1: Player 1 (🔵)
+        - 2: Player 2 (🟢)
+        - 3: Player 3 (🟡)
+        - 4: Player 4 (🔴)
+        - 5: Blocked field (⬛)
+
+        Args:
+            board (np.ndarray): The game board as a 2D NumPy array.
+        """
+        EMOJIS = {
+            0: "  ",     # empty
+            1: "🔵",     # player 1
+            2: "🟢",     # player 2
+            3: "🟡",     # player 3
+            4: "🔴",     # player 4
+            5: "⬛",     # blocked
+        }
+
+        # Print column headers
         print("   " + " ".join(f"{x:2}" for x in range(board.shape[1])))
         print("  +" + "---" * board.shape[1] + "+")
 
+        # Print each row with emoji symbols
         for y in range(board.shape[0]):
             row = []
             for x in range(board.shape[1]):
                 val = board[y, x]
-                if val == 5:
-                    cell = "-"
-                else:
-                    cell = str(val)
-                row.append(f"{cell:2}")
+                emoji = EMOJIS.get(val, "❓")  # fallback symbol for unknown values
+                row.append(emoji)
             print(f"{y:2}| {' '.join(row)} |")
 
+        # Print bottom border
         print("  +" + "---" * board.shape[1] + "+")
