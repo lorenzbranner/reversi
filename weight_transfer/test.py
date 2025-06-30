@@ -2,10 +2,13 @@ import torch
 import os
 import numpy as np
 import csv
+import matplotlib.pyplot as plt
+import math
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
 
 class ResNet(nn.Module):
     def __init__(
@@ -62,6 +65,7 @@ class ResNet(nn.Module):
         
         return policy, value
 
+
 class ResBlock(nn.Module):
     def __init__(self, num_hidden):
         super().__init__()
@@ -84,6 +88,49 @@ class DummyGame:
         self.width = width
         self.height = height
 
+
+def plot_all_policy_heatmaps(policy_tensor, board_size=(15, 15)):
+    """
+    Erstellt einen gemeinsamen Plot mit allen Heatmaps für die Spieler.
+    
+    Args:
+        policy_tensor (torch.Tensor | np.ndarray): Tensor der Form (1, num_players, width*height)
+        board_size (tuple): Spielfeldgröße, z.B. (15, 15)
+    """
+    # Wenn NumPy, zu Torch konvertieren
+    if isinstance(policy_tensor, np.ndarray):
+        policy_tensor = torch.tensor(policy_tensor, dtype=torch.float32)
+
+    policy_tensor = policy_tensor.squeeze(0)  # (num_players, 225)
+    num_players = policy_tensor.shape[0]
+
+    # Layout: 1 Zeile bis 3 Spieler, sonst Grid
+    if num_players <= 3:
+        rows, cols = 1, num_players
+    else:
+        cols = math.ceil(math.sqrt(num_players))
+        rows = math.ceil(num_players / cols)
+
+    fig, axes = plt.subplots(rows, cols, figsize=(5 * cols, 5 * rows))
+    axes = np.array(axes).reshape(rows, cols)
+
+    for i in range(rows * cols):
+        ax = axes[i // cols, i % cols]
+        if i < num_players:
+            policy_flat = policy_tensor[i].detach().cpu().numpy()
+            policy_board = policy_flat.reshape(board_size)
+            im = ax.imshow(policy_board, cmap='viridis', interpolation='nearest')
+            ax.set_title(f"Player {i+1}")
+            ax.set_xlabel("X")
+            ax.set_ylabel("Y")
+            fig.colorbar(im, ax=ax)
+        else:
+            ax.axis('off')  # Leeres Feld bei ungerader Spielerzahl
+
+    plt.tight_layout()
+    plt.show()
+
+
 game = DummyGame(15, 15)
 device = "cpu"
 num_players = 2
@@ -93,28 +140,37 @@ checkpoint_path = "models/checkpoints/model_2P_10.pt"
 model.load_state_dict(torch.load(checkpoint_path, map_location=device))
 model.eval()
 
-os.makedirs("weight_transfer/weights_csv", exist_ok=True)
+board = np.array([
+    [1,2,0,3,3,3,3,3,3,3,3,3,3,3,3],
+    [2,1,1,3,3,3,3,3,3,3,3,3,3,3,3],
+    [2,3,2,3,3,3,3,3,3,3,3,3,3,3,3],
+    [0,1,2,3,3,3,3,3,3,3,3,3,3,3,3],
+    [3,3,3,3,3,3,3,3,3,3,3,3,3,3,3],
+    [3,3,3,3,3,3,3,3,3,3,3,3,3,3,3],
+    [3,3,3,3,3,3,3,3,3,3,3,3,3,3,3],
+    [3,3,3,3,3,3,3,3,3,3,3,3,3,3,3],
+    [3,3,3,3,3,3,3,3,3,3,3,3,3,3,3],
+    [3,3,3,3,3,3,3,3,3,3,3,3,3,3,3],
+    [3,3,3,3,3,3,3,3,3,3,3,3,3,3,3],
+    [3,3,3,3,3,3,3,3,3,3,3,3,3,3,3],
+    [3,3,3,3,3,3,3,3,3,3,3,3,3,3,3],
+    [3,3,3,3,3,3,3,3,3,3,3,3,3,3,3],
+    [3,3,3,3,3,3,3,3,3,3,3,3,3,3,3]
+])
 
-for name, param in model.named_parameters():
-    if param.requires_grad:
-        file_name = f"weight_transfer/weights_csv/{name}.csv"
-        print(f"Save: {file_name}")
-        data = param.detach().cpu().numpy()
-        
-        with open(file_name, mode='w', newline='') as f:
-            writer = csv.writer(f)
-            if data.ndim == 1:
-                writer.writerow(data)
-            else:
-                writer.writerows(data.reshape(data.shape[0], -1))
+one_hot = np.eye(4)[board]
+one_hot = np.transpose(one_hot, (2, 0, 1))
+one_hot = np.expand_dims(one_hot, axis=0)
 
-for name, module in model.named_modules():
-    if isinstance(module, torch.nn.BatchNorm2d):
-        for stat_name in ["running_mean", "running_var"]:
-            stat = getattr(module, stat_name)
-            file_name = f"weight_transfer/weights_csv/{name}.{stat_name}.csv"
-            print(f"Save: {file_name}")
-            data = stat.detach().cpu().numpy()
-            with open(file_name, mode='w', newline='') as f:
-                writer = csv.writer(f)
-                writer.writerow(data)
+encoded_board_tensor = torch.tensor(one_hot, dtype=torch.float32)
+
+policy, value = model(encoded_board_tensor)
+
+print(value)
+
+plot_all_policy_heatmaps(policy)
+
+policy_cpp_flat = np.loadtxt("weight_transfer/policy.csv", delimiter=",")
+policy_cpp = policy_cpp_flat.reshape(1, 2, 225)
+
+plot_all_policy_heatmaps(policy_cpp)
