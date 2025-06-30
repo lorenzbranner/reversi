@@ -225,7 +225,7 @@ class MCTS:
                     policy *= valid_moves_mask
                     policy_sum = np.sum(policy)
                     
-                    if policy_sum == 0:                             # fall back so we dont / 0 
+                    if policy_sum == 0:                             # fall back so we dont / 0 could happen but not very likely 
                         policy = valid_moves_mask.astype(np.float32)
                         policy /= np.sum(policy)
                     else:
@@ -234,10 +234,9 @@ class MCTS:
                     values = values.squeeze(0).cpu().numpy()
                     node.expand(policy)
                 else:
-                    # we need to skip this player because he has no valid moves 
-                    child_player = self.game.get_next_player(node.current_player, node.num_players)
-                    # create child node with the same board but next player and 
-                    child = Node(game=self.game, C=self.C, board=node.board.copy(), num_players=node.num_players, current_player=child_player, parent=node)
+                   
+                    child_player = self.game.get_next_player(node.current_player, node.num_players)                                                                     # we need to skip this player because he has no valid moves 
+                    child = Node(game=self.game, C=self.C, board=node.board.copy(), num_players=node.num_players, current_player=child_player, parent=node)             # create child node with the same board but next player and 
                     
                     _, values = self.model(
                         torch.tensor(self.game.get_encoded_board(node.board), device=self.model.device).unsqueeze(0)
@@ -376,7 +375,7 @@ class AlphaZero:
 
         board_tensor = torch.tensor(np.array(board), dtype=torch.float32, device=self.model.device)
         policy_tensor = torch.tensor(np.array(policy_targets), dtype=torch.float32, device=self.model.device)
-        value_tensor = torch.tensor(np.array(value_targets), dtype=torch.float32, device=self.model.device).squeeze()
+        value_tensor = torch.tensor(np.array(value_targets), dtype=torch.float32, device=self.model.device)
         player_tensor = torch.tensor(np.array(current_player), dtype=torch.long, device=self.model.device) - 1  # 0-based
 
         dataset = TensorDataset(board_tensor, policy_tensor, value_tensor, player_tensor)
@@ -416,7 +415,7 @@ class AlphaZero:
         checkpoint_iteration: int = 10,
         train_log_iteration: int = 25,
     ):
-        for iteration in range(checkpoint_start + 1, self.num_iterations):
+        for iteration in range(checkpoint_start + 1, self.num_iterations + 1):
             
             print(f"\n===== [Iteration {iteration}/{self.num_iterations}] =====")
             
@@ -448,6 +447,10 @@ class AlphaZero:
                 torch.save(self.optimizer.state_dict(),  checkpoint_folder + f"optimizer_{self.game.max_players}P_{iteration}.pt")
 
                 log("Checkpoint", f"Model and optimizer saved at iteration {iteration}")
+
+        os.makedirs(checkpoint_folder, exist_ok=True)
+        torch.save(self.model.state_dict(), checkpoint_folder + f"model_{self.game.max_players}P_final.pt")
+        torch.save(self.optimizer.state_dict(),  checkpoint_folder + f"optimizer_{self.game.max_players}P_final.pt")
 
 
     @torch.no_grad()
