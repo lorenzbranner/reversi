@@ -477,7 +477,7 @@ if __name__ == "__main__":
     max_players = 2
     maps_path = "./maps/2_player_train/"
     from_checkpoint = True
-    checkpoint = 10
+    checkpoint = 20
     
     reversi = Reversi(max_players=max_players)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
