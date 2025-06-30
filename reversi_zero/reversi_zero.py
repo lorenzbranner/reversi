@@ -519,20 +519,3 @@ if __name__ == "__main__":
     alphaZero.learn(
         checkpoint_start = 0 if not from_checkpoint else checkpoint
     )
-    
-    ####
-
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-    board, player = reversi.get_initial_board("./maps/simulate.map")
-    print(board)
-
-    encoded_board = reversi.get_encoded_board(board)
-    print(encoded_board)
-
-    tensor_state = torch.tensor(encoded_board, device=device).unsqueeze(0)
-
-    policy, value = model(tensor_state)
-    policy = torch.softmax(policy, axis=1).squeeze(0).detach().numpy()
-
-    print(value, policy)
