@@ -480,7 +480,7 @@ if __name__ == "__main__":
     max_players = 2
     maps_path = "./maps/2_player_train/"
     from_checkpoint = True
-    checkpoint = 20
+    checkpoint = 30
     
     reversi = Reversi(max_players=max_players)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -505,8 +505,8 @@ if __name__ == "__main__":
         optimizer=optimizer,
         game=reversi,
         temperature=1.25,
-        num_iterations=100,
-        num_selfPlay_iterations=40,
+        num_iterations=200,
+        num_selfPlay_iterations=80,
         num_searches = 400,
         num_epochs=300,
         batch_size=256,
