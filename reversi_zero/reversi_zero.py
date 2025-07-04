@@ -716,7 +716,7 @@ class AlphaZero:
                 memory += self.self_play()
 
             duration = time.time() - start_time
-            log("SelfPlay", f"Completed {self.self.num_selfPlay_iterations if not self.use_parralel_self_play else self.self.num_selfPlay_iterations * self.num_parallel_games} games in {duration:.2f}s")
+            log("SelfPlay", f"Completed {self.num_selfPlay_iterations if not self.use_parralel_self_play else self.self.num_selfPlay_iterations * self.num_parallel_games} games in {duration:.2f}s")
             log("SelfPlay", f"Total samples collected: {len(memory)}")
           
             print() # one new line
