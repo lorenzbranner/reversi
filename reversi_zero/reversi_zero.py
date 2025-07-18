@@ -538,8 +538,10 @@ class AlphaZero:
         self_play_games = []
         current_player = 1                              # in all of the games we will start with player 1 :D
         
+        
+        # there are two options here one is to sampel num_parallel_games the same map whitch is good when maps have a big variation in move count or we could sampel num_parallel_games witch is good when all games have same lenght 
+        board, num_players, map_name = self.board_generator() if callable(self.board_generator) else random.choice(self.board_generator)    # we chouse to play all on the same map becasue there are maps with 30 and maps with 212 
         for i in range(self.num_parallel_games):        # here we fill our list of self play games we play in parrallel, all games will be in SelfPlayGame class to save all the current params
-            board, num_players, map_name = self.board_generator() if callable(self.board_generator) else random.choice(self.board_generator)
             self_play_games += [SelfPlayGame(board=board, num_players=num_players, current_player= current_player)]
             
         move_count = 0
